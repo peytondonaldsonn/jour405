@@ -1,0 +1,57 @@
+Peyton Donaldson
+title: "Crime Rates"
+9/16/26
+
+Follow along with the demo to learn how to calculate crime rates using R and the Tidyverse. We'll also introduce a new library, janitor, which helps make column names easier to work with. You should get started by loading the tidyverse in a new R block, then install and load janitor.
+
+### Task 1: Load the tidyverse and install and load janitor
+
+```{r}
+library(tidyverse)
+install.packages("janitor")
+library(janitor)
+```
+
+
+
+### Task 2: Load the crime dataset from https://raw.githubusercontent.com/dwillis/jour405/refs/heads/main/data/md_annual_crime.csv
+
+```{r}
+crimes <- read_csv("https://raw.githubusercontent.com/dwillis/jour405/refs/heads/main/data/md_annual_crime.csv")
+```
+
+
+### Task 3: Use janitor to clean up the column names
+
+```{r}
+crimes <- crimes |> clean_names()
+```
+
+
+### Task 4: Calculate the total crime rate for each year (picking our unit!)
+
+```{r}
+crimes |> mutate(total_rate = grand_total/population * 10000)
+```
+
+
+
+### Task 5: Calculate the violent and property crime rates for each year (same unit)
+
+```{r}
+crimes_with_rates <- crimes |> mutate(violent_rate = violent_crime_total/population * 10000, property_rate = property_crime_total/population * 10000)
+```
+
+
+
+### Task 6: Describe our results
+
+Write a few sentences about what you found in the data. What years had the highest crime rates? What years had the lowest crime rates? Does the pattern match your expectations? What might explain some of the results you found?
+
+I found that the highest crime rate years were 1992, 1993, and 1995, driven by increases in almost every category compared with the previous year (1991). For the murder category in 1993. It increased significantly by 32, whilst in past years it's been around an increase of 13 or less. This is a little surprising to me; considering today's age, I feel as though there's way more. However, I forgot to mention there is way more technology, which I'd say is a reason for significant decreases over the years in specific categories. These results for the highest crime rates in Maryland make me think of our crime in Baltimore City and the everyday life up there. It is known for its high crime, drug use, and shootings, so it makes me wonder what specifically made these three years in the 90s so high. 
+
+In regard to the lowest crime rates, for 2020 & 2014, crime rate percentages dropped to the 40s -- 2020 being the lowest at 41.2%. I think for that specific year it dropped due to the global pandemic/COVID-19. A lot of people were confined in their homes and didn't go out much, and that's not to say not at all, but a drastic decrease is expected. However, that leads to 2014 as well, with a low crime rate in Maryland. I would investigate this further by seeing who the governor was at the time and maybe specific higher-ups that implemented new laws or policies for the city of Baltimore or Maryland, in general, and how they may've affected society and crime rates overall for that year. 
+
+
+When you are done, save your work, switch to GitHub Desktop, then add, commit and push your changes to GitHub and submit the URL of the notebook in ELMS.
+
