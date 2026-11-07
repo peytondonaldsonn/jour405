@@ -1,0 +1,159 @@
+title: "HW11: Education Level and Survey Weighting"
+author: Peyton Donaldson
+11/07/26
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+```
+
+# Introduction
+
+When a poll or survey gets published, the results almost always include a note about sample size and methodology. One thing you'll often see: "results have been weighted to reflect the U.S. adult population." But what does weighting actually *do* to the numbers — and does it matter for your story?
+
+In this assignment, you'll compare weighted and unweighted results from a 2020 survey on voting intentions, focusing on how education level relates to whether someone planned to vote.
+
+## The Data
+
+```{r load-data}
+nonvoters_data <- read_csv("https://raw.githubusercontent.com/dwillis/jour405_files/refs/heads/main/nonvoters_data.csv")
+glimpse(nonvoters_data)
+```
+
+Key variables:
+
+- `weight`: Each respondent's survey weight. A weight of 1.0 means they count as exactly one person. A weight of 2.0 means their response counts double (they represent an undersampled group). A weight of 0.5 means their response counts half as much (they represent an oversampled group).
+- `Q21`: Voting intention — 1 = Yes, 2 = No, 3 = Unsure
+- `educ`: Education level — College, Some college, High school or less
+
+## Task 1: Examine the Weights (4 points)
+
+Before comparing weighted and unweighted results, let's understand what the weights look like.
+
+```{r examine-weights}
+summary(nonvoters_data$weight)
+
+ggplot(nonvoters_data, aes(x = weight)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Distribution of Survey Weights",
+    x = "Weight Value",
+    y = "Number of Respondents"
+  )
+```
+
+**Question 1:** Most weights cluster near 1.0, but some are much higher or lower. What does a weight of 0.2 tell you about that respondent's group in the sample? What about a weight of 3.5? Why might a pollster assign such extreme weights?
+
+A weight of 0.2 explains that a respondents answer counts less than half as much, which means they represent a over sampled, popular group. Then, a weight of 3.5 explains that their group is extremely under sampled and should be examined further. However, a pollster might assign such extreme weights because it depicts a clear difference in under sampled vs. over sampled. Examiners may find it easier and more accessible to tell who in a population they need to target or be more likely to avoid in a specific study. 
+
+## Task 2: Education Distribution in the Sample (3 points)
+
+```{r education-distribution}
+nonvoters_data |>
+  count(educ) |>
+  mutate(percentage = round(n / sum(n) * 100, 1))
+```
+
+**Question 2:** College graduates are overrepresented in most surveys. Does that appear to be true here? Why might college graduates be more likely to respond to a survey than people with less education?
+
+Yes, college graduates appear to be over represented in this survey, with 39.9% of respondents having a college education, compared to 30.8% with a high school education or less and 29.3% with some college. 
+
+But I'd say we would need to compare these percentages to the actual population to know for sure. However, college graduates might be more likely to respond to surveys because they may be more interested in research, feel more comfortable answering questions, have more time and resources to participate in general.
+
+## Task 3: Unweighted Voting Intentions by Education (4 points)
+
+This is what the results look like if you treat every respondent equally — no weights applied.
+
+```{r unweighted}
+unweighted_by_education <- nonvoters_data |>
+  filter(!is.na(Q21), Q21 > 0, !is.na(educ)) |>
+  group_by(educ, Q21) |>
+  summarize(count = n(), .groups = "drop_last") |>
+  mutate(total = sum(count),
+         percentage = count / total * 100) |>
+  ungroup()
+
+unweighted_summary <- unweighted_by_education |>
+  pivot_wider(
+    id_cols = educ,
+    names_from = Q21,
+    values_from = percentage,
+    names_prefix = "pct_"
+  ) |>
+  rename("Yes (%)" = pct_1, "No (%)" = pct_2, "Unsure (%)" = pct_3)
+
+unweighted_summary
+```
+
+**Question 3:** Based only on these unweighted numbers, write a one-sentence headline for a story about education and voting intentions.
+
+"College graduates are more likely to say they intend to vote, with 93.4% saying yes compared to 73.5% of those with a high school education or less"
+
+## Task 4: Weighted Voting Intentions by Education (2 points)
+
+Now apply the weights. Instead of counting respondents, we sum their weights — so someone with a weight of 2.0 contributes twice as much as someone with a weight of 1.0.
+
+```{r weighted}
+weighted_by_education <- nonvoters_data |>
+  filter(!is.na(Q21), Q21 > 0, !is.na(educ)) |>
+  group_by(educ, Q21) |>
+  summarize(weighted_count = sum(weight), .groups = "drop_last") |>
+  mutate(weighted_total = sum(weighted_count),
+         weighted_percentage = weighted_count / weighted_total * 100) |>
+  ungroup()
+
+weighted_summary <- weighted_by_education |>
+  pivot_wider(
+    id_cols = educ,
+    names_from = Q21,
+    values_from = weighted_percentage,
+    names_prefix = "pct_"
+  ) |>
+  rename("Yes (%)" = pct_1, "No (%)" = pct_2, "Unsure (%)" = pct_3)
+
+weighted_summary
+```
+
+## Task 5: Visualize the Difference (4 points)
+
+```{r visualization}
+viz_data <- bind_rows(
+  unweighted_by_education |>
+    filter(Q21 == 1) |>
+    mutate(Type = "Unweighted") |>
+    select(Type, educ, percentage),
+  weighted_by_education |>
+    filter(Q21 == 1) |>
+    mutate(Type = "Weighted",
+           percentage = weighted_percentage) |>
+    select(Type, educ, percentage)
+)
+
+ggplot(viz_data, aes(x = educ, y = percentage, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = sprintf("%.1f%%", percentage)),
+            position = position_dodge(width = 0.9), vjust = -0.5, size = 3) +
+  labs(
+    title = "Weighted vs. Unweighted: Share Planning to Vote, by Education",
+    x = "Education Level",
+    y = "% Saying Yes"
+  ) +
+  scale_fill_manual(values = c("Unweighted" = "#2166ac", "Weighted" = "#d6604d")) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+**Question 4:** Which education group shows the biggest shift between weighted and unweighted results? In percentage points, how large is that shift? Does weighting change the story, or does it just change the exact numbers?
+
+The education group that shows the biggest shift between weighted and unweighted results is participants in the high school level or less -- decreasing from 73.5% to 70.8% (2.7 percentage points). Weighting doesn't really change the overall story I think, but it does change the exact numbers. College graduates are still the most likely to say they plan to vote, while those with a high school education or less are the least likely.
+
+## Task 6: The UMD Belonging Survey (8 points)
+
+Earlier in class this week, we looked at the 2024 UMD Belonging and Community Survey. That survey had a 23% response rate and the report acknowledged "statistically significant differences" between the sample and the UMD population — but applied no weighting to correct for them.
+
+**Question 5:** Based on what you've learned in this assignment, write 2-3 paragraphs as if you were a reporter evaluating the UMD survey before writing a story based on it. Address: (1) what the lack of weighting means for how you'd use the results, (2) which groups in the UMD survey appeared most underrepresented based on Figures 1 and 2, and (3) what question you would ask the survey's authors before publishing.
+
+If I were writing a story about the 2024 survey, I would be careful about how I used the results, especially since the survey only had a 23% response rate and didn't apply weighting. From this assignment, I've learned that weighting is important because it helps make sure the results better represent the actual population rather than just the people who responded. Without weighting, some groups might have more influence on the results than others. I wouldn't say the survey is completely unreliable, but I would definitely mention these limitations in my story so readers understand that the findings might not reflect everyone's experiences at UMD.
+
+Another concern I noticed was that some groups were less represented than others, including graduate and professional students, postdoctoral scholars, and adjunct or visiting faculty. For example, only 8% of adjunct, visiting and other non-tenure-track faculty responded, compared to 43% of tenured and tenure-track faculty. This makes me wonder whether the survey really captures the experiences of everyone on campus, especially those who might already feel less connected to the university. Before publishing, I would want to ask the survey's authors why they decided not to use weighting even though they acknowledged differences between the sample and the population. I would also be curious to know whether applying weights would significantly change the results or if the overall findings would stay somewhat the same!
