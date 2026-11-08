@@ -1,0 +1,125 @@
+title: "JOUR405 Final Project: Metro Ridership and UMD Spring Break"
+author: Peyton Donaldson
+
+
+
+# Part 1: Project Overview
+
+For my final project, I'm looking at how the University of Maryland's academic calendar might affect ridership at the College Park Metro station. Specifically, I want to see whether ridership decreases more during UMD's spring break than at other Metro stations nearby.
+
+My hypothesis is that College Park experiences a larger percentage decrease in ridership during spring break because fewer students are traveling to and from campus. I'm also interested in whether ridership increases again once students return!
+
+I'm comparing College Park with Greenbelt and Silver Spring, focusing on spring break in 2024 and 2025. I'll compare weekday entries during the two weeks before break, during break and the week or two afterward.
+
+# Part 2: Data Source
+
+My main source is the Washington Metropolitan Area Transit Authority (WMATA), which publishes public Metrorail ridership data.
+
+WMATA Metrorail Ridership Summary:
+https://www.wmata.com/about/open-data-hub/ridership-data/metrorail-ridership-summary.html
+
+WMATA Daily Ridership Dashboard:
+https://www.wmata.com/about/open-data-hub/ridership-data/daily-ridership-dashboard.html
+
+I downloaded the "Daily Rail Entries Over Time" full-data export from WMATA's dashboard. I selected 2024–2025 and dates from Feb. 1, 2024, through April 30, 2025. The file contains weekday, nonholiday entries for College Park-U of Md, Greenbelt, and Silver Spring. (Which are combined entry counts, so not individual passenger records)
+
+*The original export was converted so it could be read with `read_csv()`. So, I saved the converted file as `WMATA_data.csv` in my project folder.
+
+I will also use UMD's academic calendar to check spring break dates:
+https://registrar.umd.edu/calendars
+
+# Part 3: Loading the Data
+
+First, I'll load the packages we've used in class.
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+```
+
+Next, I'll load the WMATA CSV. This code assumes the CSV is saved in the same project folder as this notebook.
+
+```{r}
+metro <- read_csv("WMATA_data.csv")
+```
+
+# Part 4: Examining the Data
+
+First, I'll look at the columns and the first few rows to understand how the data is organized.
+
+```{r}
+glimpse(metro)
+head(metro)
+summary(metro)
+```
+
+The file has 20,656 rows and 10 columns. It covers Feb. 1, 2024, through April 30, 2025, but only includes weekdays marked as nonholidays in the dashboard filters.
+
+The main columns are `Date`, `Station Name`, `Time Period` and `Entries`. The file also includes `Day of Date`, `Day of Week`, `Holiday`, `Month`, `Service Type` and `Year`.
+
+The station names are College Park-U of Md, Greenbelt, and Silver Spring. There are five time-period categories, so a single station and date can have multiple rows. So I'll need to combine the entries across time periods before comparing total daily ridership and there are also repeated station-date-time-period combinations in the data, which I'll need to check before deciding exactly how to total the entries.
+
+I noticed that College Park and Greenbelt each have observations for 313 dates, while Silver Spring has observations for 254 dates. I need to investigate why Silver Spring has fewer dates, especially in 2024. 
+
+## Checking the stations and years
+
+```{r}
+metro |>
+  count(`Station Name`, Year)
+```
+
+## Checking the time periods
+
+```{r}
+metro |>
+  count(`Time Period`)
+```
+
+## Checking for missing values
+
+```{r}
+summary(metro)
+```
+
+I did not find any blank values, but that doesn't mean every station has data for every date. Which means I'll still need to check the missing Silver Spring dates.
+
+# Part 5: Important Variables
+
+The most important columns for my analysis are:
+
+- **Date:** The date when the ridership was recorded.
+- **Station Name:** Which Metro station the entries belong to.
+- **Entries:** The reported number of entries.
+- **Time Period:** The part of the day when those entries occurred.
+- **Year:** Whether the date is in 2024 or 2025.
+
+I will also use the day of the week to make sure I compare weekdays consistently.
+
+# Part 6: Plan for Analysis
+
+My feedback originally recommended comparing percentage changes instead of raw counts because the stations have different ridership levels. So, I plan to calculate the average daily entries for each station during the two weeks before spring break and use that as the baseline.
+
+Then I'll compare the baseline with average daily entries during spring break and afterward.
+
+**Percentage change = ((break average - baseline average) / baseline average) * 100** (Used AI to help figure this out)
+
+With this, I'll do the calculations separately for 2024 and 2025. I'll also compare the changes at College Park with the changes at Greenbelt and Silver Spring. If College Park has a much larger drop, that could suggest UMD's calendar plays a role, although it wouldn't prove that the university actually caused the difference.
+
+Once I've checked, I plan to use `filter()`, `group_by()`, `summarise()` and `ggplot()` to make the comparisons and visualizations. I'm thinking a line graph would be useful for showing ridership before, during, and after spring break.
+
+# Part 7: What's Missing?
+
+I still need to confirm UMD's exact spring break dates in both years and check Prince George's and Montgomery County public school calendars, Easter, and federal holidays. Which then leads me to also want to check whether Metro service changes/disruptions could explain any differences.
+
+Another issue is the missing Silver Spring dates in 2024. I need to figure out whether this is because of a station closure or something else.
+
+# Part 8: Questions and Next Steps
+
+My biggest question is how to handle the repeated rows for the same station, date, and time period. Should I add the entry counts together, or is there something else about the way WMATA exports the data that I should check first?
+
+I'm also wondering how to handle Silver Spring's missing dates when comparing the stations. Would it make more sense to compare only dates that all three stations have in common?
+
+Finally, would comparing percentage changes be enough for my project, or should I also use a stat/data test to see whether College Park's drop is different from the other comparing stations?
+
+Going further, my next steps are to verify the spring break dates, investigate the missing observations and repeated rows, and then start calculating weekday ridership averages for each station.
