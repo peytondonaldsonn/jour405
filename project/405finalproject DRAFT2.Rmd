@@ -1,0 +1,418 @@
+title: "JOUR405 Final Project: Metro Ridership and UMD Spring Break"
+author: Peyton Donaldson
+
+## Load the packages
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+
+metro <- read_csv("WMATA_data.csv")
+```
+
+I'll also take another look at the columns and observations to make sure everything looks right.
+
+```{r}
+glimpse(metro)
+head(metro)
+summary(metro)
+```
+## Checking Repeated Observations
+
+One of the biggest things I need to figure out is why I have repeated observations for the same station, date and time period. My professor explained that multiple observations for the same station and date are expected because the data separates ridership into different time periods. However, I still need to investigate why some of those time periods appear more than once.
+
+First, I'll count how many times each combination appears.
+
+```{r}
+metro |>
+  count(Date, `Station Name`, `Time Period`) |>
+  filter(n > 1) |>
+  arrange(desc(n))
+```
+This should help me identify which observations are repeated and how often they appear. I'm interested in whether this happens across all three stations or if it's more common at certain stations or dates.
+
+Next, I'll check whether any of the rows are completely identical.
+
+```{r}
+metro |>
+  get_dupes()
+```
+I think this is important because I don't want to accidentally count the same entries more than once when calculating daily ridership. If the rows are identical, I'll need to figure out whether they're actual duplicates or if there's another explanation for why they appear multiple times.
+
+## Checking the Missing Silver Spring Dates
+
+Another issue I noticed in my original draft was that Silver Spring had fewer dates than College Park and Greenbelt. I want to look at this more closely because missing dates could affect how accurately I compare ridership across the three stations.
+
+First, I'll count the number of different dates available for each station in 2024 and 2025.
+
+```{r}
+metro |>
+  group_by(`Station Name`, Year) |>
+  summarise(
+    total_dates = n_distinct(Date),
+    .groups = "drop"
+  )
+```
+This should help me narrow down whether the missing Silver Spring dates are mostly from 2024 or 2025.
+
+I also want to identify which specific dates are missing.
+
+```{r}
+college_park_dates <- metro |>
+  filter(`Station Name` == "College Park-U of Md") |>
+  distinct(Date)
+
+silver_spring_dates <- metro |>
+  filter(`Station Name` == "Silver Spring") |>
+  distinct(Date)
+
+anti_join(college_park_dates, silver_spring_dates, by = "Date")
+```
+This should show me which dates are included for College Park but not Silver Spring. I'm especially interested in whether any of these dates overlap with spring break because that would make comparing the stations more difficult.
+
+## Calculating Total Daily Ridership
+
+Once I've figured out what's happening with the repeated observations, I want to calculate total daily entries for each station.
+
+Since the WMATA data separates entries into different time periods, I should be able to use group_by() and summarise() to combine those counts into one daily total.
+
+I'll only use this calculation once I've confirmed that the repeated observations won't cause me to double-count entries.
+
+```{r}
+metro_daily <- metro |>
+  group_by(Date, `Station Name`, Year) |>
+  summarise(
+    daily_entries = sum(Entries, na.rm = TRUE),
+    .groups = "drop"
+  )
+head(metro_daily)
+```
+This is similar to what we've done in previous assignments when grouping observations and calculating totals. Instead of having multiple rows for the same station and date, I should now have one row showing the total number of entries for that day.
+
+Results: Based on the first few rows, the daily totals seem reasonable, with College Park having fewer entries than Greenbelt and Silver Spring. For example, on Jan. 10, 2025, College Park had 1,606 entries, compared to 3,001 at Greenbelt and 5,333 at Silver Spring. The data also now shows one row for each station and date, rather than separate rows for different time periods. But, I still need to make sure the repeated ones were correct before relying on the totals.
+
+## Mean, Median and Standard Deviation
+
+Next, I want to start looking at the average daily ridership at each station. Since College Park, Greenbelt and Silver Spring have different ridership levels, I think this would be a useful starting point before comparing spring break specifically.
+
+Similar to our previous assignments, I'll calculate the mean, median and standard deviation for each station and year.
+
+```{r}
+metro_daily |>
+  group_by(`Station Name`, Year) |>
+  summarise(
+    mean_entries = mean(daily_entries, na.rm = TRUE),
+    median_entries = median(daily_entries, na.rm = TRUE),
+    sd_entries = sd(daily_entries, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+The mean and median should help me understand what typical weekday ridership looks like at each station, while the standard deviation will show how much ridership changes from day to day.
+
+I'm interested in seeing whether College Park has more variation in ridership than Greenbelt and Silver Spring, especially because I think its ridership might be more affected by UMD's academic calendar.
+
+Results: Based on the above results, Silver Spring had the highest average daily ridership in both years, with about 6,146 entries in 2024 and 6,896 in 2025. Greenbelt came next, while College Park had the lowest averages at about 2,367 in 2024 and 2,493 in 2025. All three stations also had higher average ridership in 2025. Looking at the standard deviations, Silver Spring had the most variation in daily entries, while College Park had the least in both years. However, since the stations have different ridership levels, I think comparing percentage changes will give me a better idea of whether College Park experiences a larger decrease during spring break. I also need to keep in mind that Silver Spring has missing dates, which could've changed the outcome/averages.
+
+## Identifying Spring Break Periods
+
+Professor Willis recommended using the two weeks before spring break as my baseline, then comparing that with ridership during break and the one or two weeks afterward.
+
+Before I do this, though, I need to confirm the exact spring break dates for 2024 and 2025 using UMD's academic calendar.
+
+I'll start by making sure the Date column is recognized as a date in R.
+
+```{r}
+class(metro$Date)
+head(metro$Date)
+```
+```{r}
+metro <- metro |>
+  mutate(Date = as.Date(Date, format = "%Y-%m-%d"))
+
+class(metro$Date)
+head(metro$Date)
+```
+```{r}
+metro |>
+  summarise(
+    missing_dates = sum(is.na(Date))
+  )
+```
+```{r}
+spring_break <- tibble(
+  Year = c(2024, 2025),
+  break_start = as.Date(c("2024-03-17", "2025-03-16")),
+  break_end = as.Date(c("2024-03-24", "2025-03-23"))
+)
+
+spring_break
+```
+```{r}
+metro_daily |>
+  mutate(Date = as.Date(Date)) |>
+  filter(
+    between(Date, as.Date("2024-03-17"), as.Date("2024-03-24")) |
+    between(Date, as.Date("2025-03-16"), as.Date("2025-03-23"))
+  ) |>
+  arrange(Date, `Station Name`)
+```
+```{r}
+metro_daily |>
+  mutate(Date = as.Date(Date)) |>
+  filter(
+    between(Date, as.Date("2024-03-17"), as.Date("2024-03-24")) |
+    between(Date, as.Date("2025-03-16"), as.Date("2025-03-23"))
+  ) |>
+  group_by(`Station Name`, Year) |>
+  summarise(
+    total_dates = n_distinct(Date),
+    .groups = "drop"
+  )
+```
+
+*(Used AI to help form this -- I was stuck with organizing it accurately)
+https://chatgpt.com/share/6b0214f7-5224-83e9-ad0c-eb20e0c70432 
+
+
+Once I've confirmed the spring break dates, I can use mutate() and case_when() to separate the observations into before, during and after break.
+
+I think this will be especially useful because I want to compare the same periods at all three stations rather than looking at overall ridership throughout the year.
+
+## Percentage Change
+
+One of the main suggestions from my professor was to compare percentage changes rather than raw ridership numbers. I think this makes sense because the three stations have different numbers of daily riders, so comparing the actual number of entries might not tell the full story.
+
+I want to calculate the average daily entries during the two weeks before break and compare that with the average during spring break.
+
+Percentage change = ((break average - baseline average) / baseline average) * 100
+
+For example, if College Park averages 5,000 daily entries before break and 3,500 during break, that would be a 30% decrease.
+
+I want to do this separately for 2024 and 2025 to see whether College Park consistently experiences a larger percentage decrease than Greenbelt and Silver Spring.
+
+I'm also interested in calculating the percentage change after spring break to see whether ridership returns to its usual levels once students are back on campus.
+
+## Creating a Line Graph
+
+I also wanted to try using ggplot() to start visualizing ridership patterns.
+
+For now, I'll make a basic line graph showing daily entries at College Park.
+
+
+```{r}
+metro_daily <- metro |>
+  mutate(Date = as.Date(mdy_hms(Date))) |>
+  group_by(Date, `Station Name`, Year) |>
+  summarise(
+    daily_entries = sum(Entries, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+metro_daily |>
+  filter(`Station Name` == "College Park-U of Md") |>
+  ggplot(aes(x = Date, y = daily_entries)) +
+  geom_line(color = "blue") +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b %Y") +
+  labs(
+    title = "Daily Metro Ridership at College Park",
+    x = "Date",
+    y = "Daily Entries"
+  ) +
+  theme_minimal()
+```
+
+I think a line graph will be useful because it'll help me see whether there are noticeable decreases or increases in ridership over time.
+
+Eventually, I want to narrow this down to the weeks surrounding spring break and compare all three stations. I'm especially interested in whether College Park has a larger drop during break and whether ridership increases afterward.
+
+Results: Looking at the graph, College Park's daily ridership seems to fluctuate throughout both years, with most days falling between 2,000 and 3,000 entries. There are a few noticeable spikes, including one in June 2024 that reaches over 4,500 entries. Ridership also drops quite a bit around December 2024 and January 2025, with some days falling below 1,000 entries. I think this is interesting because it could suggest that UMD's academic calendar plays a role, especially during winter break when fewer students are on campus. However, I can't say for sure what's causing these changes. I also noticed that ridership starts increasing again in early 2025. My next step is to narrow the graph down to the weeks surrounding spring break in both years to see whether there's a similar decrease
+
+Questions and Next Steps
+
+After starting to apply some of the code we've learned, I think my biggest priority is still making sure the data is accurate before moving into the actual spring break comparisons.
+
+The repeated observations are probably my biggest concern right now because I don't want to accidentally double-count ridership. I also need to figure out how to handle Silver Spring's missing dates, especially if they overlap with the periods I'm interested in.
+
+Once I've worked through those issues, I want to calculate the average daily ridership before, during and after spring break for both years. Then I'll compare the percentage changes across the three stations and create graphs to show the differences.
+
+My professor (you) also suggested that regression could help me test whether College Park's decrease is actually larger than the decreases at Greenbelt and Silver Spring. Since we've recently started learning about regression, I think this could be interesting to try once I've finished the descriptive comparisons.
+
+I know that even if College Park experiences a larger decrease, that wouldn't necessarily prove UMD students are responsible. However, I think comparing the same periods across multiple stations and years could help me better understand whether there's a noticeable relationship between UMD's academic calendar and Metro ridership.
+
+-----------------------------------------------------------------
+
+# Part 0: Proposed Analyses
+
+Based on the assignments and activities we've completed throughout this semester, so far, I think there are several different tests and calculations that could be useful for my project! Since my main hypothesis is that College Park experiences a larger decrease in Metro ridership during UMD's spring break compared to Greenbelt and Silver Spring, I want to focus on comparing ridership across stations with certain time periods.
+
+## Mean, Median and Standard Deviation
+
+First, I want to calculate the mean, median and standard deviation of daily weekday ridership at each of the three Metro stations before, during and after spring break. Similar to what we've done in previous assignments, this would help me understand what typical ridership looks like at each station and how much it changes throughout these different periods.
+
+## Percentage Change
+
+Similar to what we did in our Maryland car thefts assignment, I want to calculate the percentage change in average daily ridership before and during spring break, as well as during and after spring break. Since each station has a different number of daily riders, I think comparing percentage changes rather than just the number of riders would make more sense. This would directly help me test my hypothesis that CP experiences a larger decrease than the other two stations.
+
+## Time Series and Data Visualizations
+
+Similar to our previous WMATA ridership assignments, I want to create line graphs using `ggplot()` to visualize ridership leading up to, during and following spring break. This would allow me to identify any noticeable patterns, decreases or increases over time. I'm especially interested in seeing whether ridership increases again once students return to campus! I could also create a bar chart comparing the percentage changes across each station.
+
+## Z-Scores
+
+I think calculating z-scores could be useful in determining whether ridership during spring break is unusually low compared to typical weekday ridership before break at each station. Similar to our previous WMATA and accident data assignments, I could identify whether certain days fall more than two standard deviations below the mean. I'm interested in whether College Park has more unusually low ridership days during this period compared to Greenbelt and Silver Spring.
+
+## T-Tests
+
+Similar to our assignment where we compared car thefts during two different periods of the year, I could use `t.test()` to compare average daily ridership before and during spring break. I could make a t-test for each station individually to determine whether the decreases in ridership are statistically significant.
+
+However, I'm not entirely sure how reliable these results would be considering there are only about five weekdays during spring break and ridership on consecutive days might not be independent of one another. I'm also unsure how to test whether College Park's decrease is significantly larger than the decreases at the other stations, rather than just testing each station individually.
+
+## Confidence Intervals and Effect Size
+
+Along with the t-tests, I could calculate 95% confidence intervals and effect sizes, similar to what we did in our car thefts, community policing and home prices assignments. I think calculating Cohen's d could help me understand how substantial the differences in ridership actually are. I think just because a decrease is statistically significant doesn't necessarily mean it's a large or meaningful decrease.
+
+## Comparing Patterns Across Years
+
+Since I have ridership data from both 2024 and 2025, I want to compare whether similar patterns occurred during spring break in both years. I could calculate the percentage changes separately for each year and determine whether College Park consistently experiences a larger decrease than the other stations. I think this would strengthen my
+project because I wouldn't be relying solely on what happened during one particular spring break.
+
+## Correlation and Linear Regression
+
+Since we've recently learned about correlation and linear regression, I'm interested in whether I could apply either to my project. One idea I have is to create a variable indicating whether a date falls during spring break to examine its relationship with daily ridership.
+
+I'm not entirely sure how I would account for differences between Metro stations, years and days of the week. I could potentially use an interaction between the station and spring break variables to determine whether the relationship differs across stations. This is something I might need additional help with!
+
+## Day-of-the-Week Analysis
+
+Similar to our previous assignments where we calculated weekday averages, I could group ridership by the day of the week using `group_by()` and `summarize()`. For example, I could compare Mondays during spring break to Mondays before and after spring break. I think this could be useful because Metro ridership might naturally be higher or lower on certain weekdays regardless of UMD's academic calendar.
+
+## Potential Limitations and Concerns
+
+One concern I have is that WMATA's data doesn't distinguish between UMD students and other Metro riders. Even if I find that ridership decreases during spring break, I wouldn't necessarily be able to conclude that students are directly responsible for that decrease.
+
+Other factors, such as weather, Metro service disruptions, holidays or events, could also influence ridership. Before digging deeper, I want to make sure there aren't any missing dates or values and that I'm comparing consistent time periods across all three stations.
+
+I'm hoping that by conducting several different analyses and comparing patterns across both years, I'll be able to better understand whether there is a noticeable relationship between UMD's academic calendar and Metro ridership at College Park.
+
+-----------------------------------------------------------
+
+# Part 1: Project Overview
+
+For my final project, I'm looking at how the University of Maryland's academic calendar might affect ridership at the College Park Metro station. Specifically, I want to see whether ridership decreases more during UMD's spring break than at other Metro stations nearby.
+
+My hypothesis is that College Park experiences a larger percentage decrease in ridership during spring break because fewer students are traveling to and from campus. I'm also interested in whether ridership increases again once students return!
+
+I'm comparing College Park with Greenbelt and Silver Spring, focusing on spring break in 2024 and 2025. I'll compare weekday entries during the two weeks before break, during break and the week or two afterward.
+
+# Part 2: Data Source
+
+My main source is the Washington Metropolitan Area Transit Authority (WMATA), which publishes public Metrorail ridership data.
+
+WMATA Metrorail Ridership Summary:
+https://www.wmata.com/about/open-data-hub/ridership-data/metrorail-ridership-summary.html
+
+WMATA Daily Ridership Dashboard:
+https://www.wmata.com/about/open-data-hub/ridership-data/daily-ridership-dashboard.html
+
+I downloaded the "Daily Rail Entries Over Time" full-data export from WMATA's dashboard. I selected 2024–2025 and dates from Feb. 1, 2024, through April 30, 2025. The file contains weekday, nonholiday entries for College Park-U of Md, Greenbelt, and Silver Spring. (Which are combined entry counts, so not individual passenger records)
+
+*The original export was converted so it could be read with `read_csv()`. So, I saved the converted file as `WMATA_data.csv` in my project folder.
+
+I will also use UMD's academic calendar to check spring break dates:
+https://registrar.umd.edu/calendars
+
+# Part 3: Loading the Data
+
+First, I'll load the packages we've used in class.
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+```
+
+Next, I'll load the WMATA CSV. This code assumes the CSV is saved in the same project folder as this notebook.
+
+```{r}
+metro <- read_csv("WMATA_data.csv")
+```
+
+# Part 4: Examining the Data
+
+First, I'll look at the columns and the first few rows to understand how the data is organized.
+
+```{r}
+glimpse(metro)
+head(metro)
+summary(metro)
+```
+
+The file has 20,656 rows and 10 columns. It covers Feb. 1, 2024, through April 30, 2025, but only includes weekdays marked as nonholidays in the dashboard filters.
+
+The main columns are `Date`, `Station Name`, `Time Period` and `Entries`. The file also includes `Day of Date`, `Day of Week`, `Holiday`, `Month`, `Service Type` and `Year`.
+
+The station names are College Park-U of Md, Greenbelt, and Silver Spring. There are five time-period categories, so a single station and date can have multiple rows. So I'll need to combine the entries across time periods before comparing total daily ridership and there are also repeated station-date-time-period combinations in the data, which I'll need to check before deciding exactly how to total the entries.
+
+I noticed that College Park and Greenbelt each have observations for 313 dates, while Silver Spring has observations for 254 dates. I need to investigate why Silver Spring has fewer dates, especially in 2024. 
+
+## Checking the stations and years
+
+```{r}
+metro |>
+  count(`Station Name`, Year)
+```
+
+## Checking the time periods
+
+```{r}
+metro |>
+  count(`Time Period`)
+```
+
+## Checking for missing values
+
+```{r}
+summary(metro)
+```
+
+I did not find any blank values, but that doesn't mean every station has data for every date. Which means I'll still need to check the missing Silver Spring dates.
+
+# Part 5: Important Variables
+
+The most important columns for my analysis are:
+
+- **Date:** The date when the ridership was recorded.
+- **Station Name:** Which Metro station the entries belong to.
+- **Entries:** The reported number of entries.
+- **Time Period:** The part of the day when those entries occurred.
+- **Year:** Whether the date is in 2024 or 2025.
+
+I will also use the day of the week to make sure I compare weekdays consistently.
+
+# Part 6: Plan for Analysis
+
+My feedback originally recommended comparing percentage changes instead of raw counts because the stations have different ridership levels. So, I plan to calculate the average daily entries for each station during the two weeks before spring break and use that as the baseline.
+
+Then I'll compare the baseline with average daily entries during spring break and afterward.
+
+**Percentage change = ((break average - baseline average) / baseline average) * 100** (Used AI to help figure this out)
+
+With this, I'll do the calculations separately for 2024 and 2025. I'll also compare the changes at College Park with the changes at Greenbelt and Silver Spring. If College Park has a much larger drop, that could suggest UMD's calendar plays a role, although it wouldn't prove that the university actually caused the difference.
+
+Once I've checked, I plan to use `filter()`, `group_by()`, `summarise()` and `ggplot()` to make the comparisons and visualizations. I'm thinking a line graph would be useful for showing ridership before, during, and after spring break.
+
+# Part 7: What's Missing?
+
+I still need to confirm UMD's exact spring break dates in both years and check Prince George's and Montgomery County public school calendars, Easter, and federal holidays. Which then leads me to also want to check whether Metro service changes/disruptions could explain any differences.
+
+Another issue is the missing Silver Spring dates in 2024. I need to figure out whether this is because of a station closure or something else.
+
+# Part 8: Questions and Next Steps
+
+My biggest question is how to handle the repeated rows for the same station, date, and time period. Should I add the entry counts together, or is there something else about the way WMATA exports the data that I should check first?
+
+I'm also wondering how to handle Silver Spring's missing dates when comparing the stations. Would it make more sense to compare only dates that all three stations have in common?
+
+Finally, would comparing percentage changes be enough for my project, or should I also use a stat/data test to see whether College Park's drop is different from the other comparing stations?
+
+Going further, my next steps are to verify the spring break dates, investigate the missing observations and repeated rows, and then start calculating weekday ridership averages for each station.
